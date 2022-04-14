@@ -60,7 +60,7 @@ func loadFilter() -> [String]? {
     return ["AWSClientRuntime"] + filter
 }
 
-func loadReleasedSDKs() throws -> [String] {
+func loadClients() throws -> [String] {
     let sdks = try FileManager.default.contentsOfDirectory(atPath: "release")
 
     guard let filter = loadFilter() else {
@@ -73,23 +73,6 @@ func loadReleasedSDKs() throws -> [String] {
     return filtered
 }
 
-func generateProducts(_ releasedSDKs: [String]) -> String {
-    let result: [String] = releasedSDKs.reduce(into: []) {
-        $0.append("    .library(name: \"\($1)\", targets: [\"\($1)\"]),")
-    }
-
-    return result.joined(separator: "\n")
-}
-
-func generateTargets(_ releasedSDKs: [String]) -> String {
-    let result: [String] = releasedSDKs.reduce(into: []) {
-        $0.append("    .target(name: \"\($1)\", dependencies: [.product(name: \"ClientRuntime\", package: \"ClientRuntime\"), \"AWSClientRuntime\"], path: \"release/\($1)\"),")
-    }
-
-    return result.joined(separator: "\n")
-}
-
-let releasedSDKs = try loadReleasedSDKs().sorted()
 guard let versions = getVersionsOfDependencies() else {
     print("Failed to get version dependencies")
     print("  Unable to to read: '\(plistFile)'")
@@ -97,11 +80,11 @@ guard let versions = getVersionsOfDependencies() else {
 }
 
 if let template = try loadTemplate() {
-    let products = generateProducts(releasedSDKs)
-    let targets = generateTargets(releasedSDKs)
+    let clients = try loadClients().sorted().map {
+        "    \"\($0)\", "
+    }
     let output = template
-        .replacingOccurrences(of: "<% Products %>", with:products)
-        .replacingOccurrences(of: "<% Targets %>", with: targets)
+        .replacingOccurrences(of: "<% Clients %>", with: clients.joined(separator: "\n"))
         .replacingOccurrences(of: "<% AwsCrtVersion %>", with: "\(versions.awsCRTSwiftVersion)")
         .replacingOccurrences(of: "<% ClientRuntimeVersion %>", with: "\(versions.clientRuntimeVersion)")
     print(output)

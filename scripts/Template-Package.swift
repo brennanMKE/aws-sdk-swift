@@ -5,28 +5,8 @@ import class Foundation.JSONDecoder
 import struct Foundation.URL
 import struct Foundation.Data
 
-let allProducts: [Product] = [
-    .library(name: "AWSClientRuntime", targets: ["AWSClientRuntime"]),
-<% Products %>
-]
-
-let allTargets: [Target] = [
-    .target(
-        name: "AWSClientRuntime",
-        dependencies: [
-            .product(name: "ClientRuntime", package: "ClientRuntime"),
-            .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
-        ]
-    ),
-    .testTarget(
-        name: "AWSClientRuntimeTests",
-        dependencies: [
-            "AWSClientRuntime",
-            .product(name: "SmithyTestUtil", package: "ClientRuntime"),
-            .product(name: "ClientRuntime", package: "ClientRuntime")
-        ]
-    ),
-<% Targets %>
+let clients = [
+<% Clients %>
 ]
 
 var filter: [String]? {
@@ -41,27 +21,33 @@ var filter: [String]? {
               return nil
           }
 
-    return ["AWSClientRuntime"] + filter
+    return filter
 }
 
-var products: [Product] {
+var filteredClients: [String] {
     guard let filter = filter else {
-        return allProducts
+        // return all clients if there is no filter
+        return clients
     }
-    let products = allProducts.filter {
-        filter.contains($0.name)
+    let filtered = clients.filter {
+        filter.contains($0)
     }
-    return products
+    return filtered
 }
 
-var targets: [Target] {
-    guard let filter = filter else {
-        return allTargets
+var clientProducts: [Product] {
+    filteredClients.map {
+        .library(name: $0, targets: [$0])
     }
-    let targets = allTargets.filter {
-        filter.contains($0.name)
+}
+
+var clientTargets: [Target] {
+    filteredClients.map {
+        .target(name: $0, dependencies: [
+            .product(name: "ClientRuntime", 
+            package: "ClientRuntime"), "AWSClientRuntime"], 
+            path: "release/\($0)")
     }
-    return targets
 }
 
 let package = Package(
@@ -70,10 +56,28 @@ let package = Package(
         .macOS(.v10_15),
         .iOS(.v13)
     ],
-    products: products,
+    products: [
+        .library(name: "AWSClientRuntime", targets: ["AWSClientRuntime"])
+    ] + clientProducts,
     dependencies: [
         .package(name: "AwsCrt", url: "https://github.com/awslabs/aws-crt-swift.git", from: "<% AwsCrtVersion %>"),
         .package(name: "ClientRuntime", url: "https://github.com/awslabs/smithy-swift.git", from: "<% ClientRuntimeVersion %>")
     ],
-    targets: targets
+    targets: [
+        .target(
+            name: "AWSClientRuntime",
+            dependencies: [
+                .product(name: "ClientRuntime", package: "ClientRuntime"),
+                .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
+            ]
+        ),
+        .testTarget(
+            name: "AWSClientRuntimeTests",
+            dependencies: [
+                "AWSClientRuntime",
+                .product(name: "SmithyTestUtil", package: "ClientRuntime"),
+                .product(name: "ClientRuntime", package: "ClientRuntime")
+            ]
+        ),
+    ] + clientTargets
 )
