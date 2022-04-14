@@ -1,0 +1,6 @@
+[
+    "AWSClientRuntime",
+    "AWSCognitoIdentityProvider",
+    "AWSCognitoIdentity",
+    "AWSS3"
+]
