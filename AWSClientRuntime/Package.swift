@@ -24,7 +24,7 @@ let package = Package(
                 .product(name: "ClientRuntime", package: "ClientRuntime"),
                 .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
             ],
-            path: "./Sources"
+            path: "../Sources/AWSClientRuntime"
         ),
         .testTarget(
             name: "AWSClientRuntimeTests",
@@ -33,7 +33,7 @@ let package = Package(
                 .product(name: "SmithyTestUtil", package: "ClientRuntime"),
                 .product(name: "ClientRuntime", package: "ClientRuntime")
             ],
-            path: "./Tests"
+            path: "../Tests/AWSClientRuntimeTests"
         )
     ]
 )
