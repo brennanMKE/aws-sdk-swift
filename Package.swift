@@ -4,68 +4,56 @@ import class Foundation.FileManager
 import class Foundation.JSONDecoder
 import struct Foundation.URL
 import struct Foundation.Data
+import struct ObjectiveC.ObjCBool
 
-let allProducts: [Product] = [
-    .library(name: "AWSClientRuntime", targets: ["AWSClientRuntime"]),
-    .library(name: "AWSCognitoIdentity", targets: ["AWSCognitoIdentity"]),
-    .library(name: "AWSCognitoIdentityProvider", targets: ["AWSCognitoIdentityProvider"]),
-    .library(name: "AWSS3", targets: ["AWSS3"]),
-]
+let rootURL = URL(fileURLWithPath: #file).deletingLastPathComponent()
+let filterFileURL = rootURL.appendingPathComponent("filter.json")
+let releaseURL = rootURL.appendingPathComponent("release")
 
-let allTargets: [Target] = [
-    .target(
-        name: "AWSClientRuntime",
-        dependencies: [
-            .product(name: "ClientRuntime", package: "ClientRuntime"),
-            .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
-        ]
-    ),
-    .testTarget(
-        name: "AWSClientRuntimeTests",
-        dependencies: [
-            "AWSClientRuntime",
-            .product(name: "SmithyTestUtil", package: "ClientRuntime"),
-            .product(name: "ClientRuntime", package: "ClientRuntime")
-        ]
-    ),
-    .target(name: "AWSCognitoIdentity", dependencies: [.product(name: "ClientRuntime", package: "ClientRuntime"), "AWSClientRuntime"], path: "release/AWSCognitoIdentity"),
-    .target(name: "AWSCognitoIdentityProvider", dependencies: [.product(name: "ClientRuntime", package: "ClientRuntime"), "AWSClientRuntime"], path: "release/AWSCognitoIdentityProvider"),
-    .target(name: "AWSS3", dependencies: [.product(name: "ClientRuntime", package: "ClientRuntime"), "AWSClientRuntime"], path: "release/AWSS3"),
-]
+var isDirectory = ObjCBool(true)
+if !FileManager.default.fileExists(atPath: releaseURL.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+    fatalError("Please check out a branch using a release tag. [git checkout -b release 0.2.4]")
+}
+
+let clients = try FileManager.default
+    .contentsOfDirectory(atPath: releaseURL.path)
+    .filter { $0.hasPrefix("AWS") }
 
 var filter: [String]? {
-    let fileManager = FileManager.default
-    let filterFileURL = URL(fileURLWithPath: #file)
-        .deletingLastPathComponent()
-        .appendingPathComponent("filter.json")
+    guard FileManager.default.fileExists(atPath: filterFileURL.path),
+        let data = try? Data(contentsOf: filterFileURL),
+        let filter = try? JSONDecoder().decode([String].self, from: data) else {
+            return nil
+        }
 
-    guard fileManager.fileExists(atPath: filterFileURL.path),
-          let data = try? Data(contentsOf: filterFileURL),
-          let filter = try? JSONDecoder().decode([String].self, from: data) else {
-              return nil
-          }
-
-    return ["AWSClientRuntime"] + filter
+    return filter
 }
 
-var products: [Product] {
+var filteredClients: [String] {
     guard let filter = filter else {
-        return allProducts
+        // return all clients if there is no filter
+        return clients
     }
-    let products = allProducts.filter {
-        filter.contains($0.name)
+    let filtered = clients.filter {
+        filter.contains($0)
     }
-    return products
+    return filtered
 }
 
-var targets: [Target] {
-    guard let filter = filter else {
-        return allTargets
+var clientProducts: [Product] {
+    filteredClients.map {
+        .library(name: $0, targets: [$0])
     }
-    let targets = allTargets.filter {
-        filter.contains($0.name)
+}
+
+var clientTargets: [Target] {
+    filteredClients.map {
+        .target(name: $0, dependencies: [
+                .product(name: "ClientRuntime", package: "ClientRuntime"), 
+                "AWSClientRuntime"
+            ], 
+            path: "release/\($0)")
     }
-    return targets
 }
 
 let package = Package(
@@ -74,11 +62,28 @@ let package = Package(
         .macOS(.v10_15),
         .iOS(.v13)
     ],
-    products: products,
+    products: [
+        .library(name: "AWSClientRuntime", targets: ["AWSClientRuntime"])
+    ] + clientProducts,
     dependencies: [
         .package(name: "AwsCrt", url: "https://github.com/awslabs/aws-crt-swift.git", from: "0.2.2"),
         .package(name: "ClientRuntime", url: "https://github.com/awslabs/smithy-swift.git", from: "0.2.3")
     ],
-    targets: targets
+    targets: [
+        .target(
+            name: "AWSClientRuntime",
+            dependencies: [
+                .product(name: "ClientRuntime", package: "ClientRuntime"),
+                .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
+            ]
+        ),
+        .testTarget(
+            name: "AWSClientRuntimeTests",
+            dependencies: [
+                "AWSClientRuntime",
+                .product(name: "SmithyTestUtil", package: "ClientRuntime"),
+                .product(name: "ClientRuntime", package: "ClientRuntime")
+            ]
+        ),
+    ] + clientTargets
 )
-

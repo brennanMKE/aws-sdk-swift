@@ -4,22 +4,27 @@ import class Foundation.FileManager
 import class Foundation.JSONDecoder
 import struct Foundation.URL
 import struct Foundation.Data
+import struct ObjectiveC.ObjCBool
 
-let clients = [
-<% Clients %>
-]
+let rootURL = URL(fileURLWithPath: #file).deletingLastPathComponent()
+let filterFileURL = rootURL.appendingPathComponent("filter.json")
+let releaseURL = rootURL.appendingPathComponent("release")
+
+var isDirectory = ObjCBool(true)
+if !FileManager.default.fileExists(atPath: releaseURL.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+    fatalError("Please check out a branch using a release tag. [git checkout -b release 0.2.4]")
+}
+
+let clients = try FileManager.default
+    .contentsOfDirectory(atPath: releaseURL.path)
+    .filter { $0.hasPrefix("AWS") }
 
 var filter: [String]? {
-    let fileManager = FileManager.default
-    let filterFileURL = URL(fileURLWithPath: #file)
-        .deletingLastPathComponent()
-        .appendingPathComponent("filter.json")
-
-    guard fileManager.fileExists(atPath: filterFileURL.path),
-          let data = try? Data(contentsOf: filterFileURL),
-          let filter = try? JSONDecoder().decode([String].self, from: data) else {
-              return nil
-          }
+    guard FileManager.default.fileExists(atPath: filterFileURL.path),
+        let data = try? Data(contentsOf: filterFileURL),
+        let filter = try? JSONDecoder().decode([String].self, from: data) else {
+            return nil
+        }
 
     return filter
 }
@@ -44,8 +49,9 @@ var clientProducts: [Product] {
 var clientTargets: [Target] {
     filteredClients.map {
         .target(name: $0, dependencies: [
-            .product(name: "ClientRuntime", 
-            package: "ClientRuntime"), "AWSClientRuntime"], 
+                .product(name: "ClientRuntime", package: "ClientRuntime"), 
+                "AWSClientRuntime"
+            ], 
             path: "release/\($0)")
     }
 }
