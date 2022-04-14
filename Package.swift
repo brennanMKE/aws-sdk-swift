@@ -12,9 +12,10 @@ let releaseURL = rootURL.appendingPathComponent("release")
 
 var isDirectory = ObjCBool(true)
 if !FileManager.default.fileExists(atPath: releaseURL.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
-    fatalError("Please check out a branch using a release tag. [git checkout -b release 0.2.4]")
+    fatalError("Please check out a branch using a release tag. [git checkout -b v0.2.2 0.2.2]")
 }
 
+let clientRuntime: Target.Dependency = .product(name: "ClientRuntime", package: "ClientRuntime")
 let clients = try FileManager.default
     .contentsOfDirectory(atPath: releaseURL.path)
     .filter { $0.hasPrefix("AWS") }
@@ -49,7 +50,7 @@ var clientProducts: [Product] {
 var clientTargets: [Target] {
     filteredClients.map {
         .target(name: $0, dependencies: [
-                .product(name: "ClientRuntime", package: "ClientRuntime"), 
+                clientRuntime, 
                 "AWSClientRuntime"
             ], 
             path: "release/\($0)")
