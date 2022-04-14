@@ -22,88 +22,89 @@ func getVersionsOfDependencies() -> VersionDeps? {
     return deps
 }
 
-func generateHeader() {
-    let header = """
-    // swift-tools-version:5.5
-    import PackageDescription
-    import class Foundation.FileManager
-    """
-    print(header)
-}
-func generatePackageHeader() {
-let packageHeader = """
-let package = Package(
-    name: "AWSSwiftSDK",
-    platforms: [
-        .macOS(.v10_15),
-        .iOS(.v13)
-    ],
-"""
-    print(packageHeader)
-}
+func loadTemplate() throws -> String? {
+    let fileManager = FileManager.default
+    let templateFileURL = URL(fileURLWithPath: #file)
+        .deletingLastPathComponent()
+        .appendingPathComponent("Template-Package.swift")
 
-func generateProducts(_ releasedSDKs: [String]) {
-
-    print("    products: [")
-    print("        .library(name: \"AWSClientRuntime\", targets: [\"AWSClientRuntime\"]),")
-    for sdk in releasedSDKs {
-        print("        .library(name: \"\(sdk)\", targets: [\"\(sdk)\"]),")
+    guard fileManager.fileExists(atPath: templateFileURL.path) else {
+        print("File not found: \(templateFileURL.absoluteString)")
+        return nil
     }
-    print("    ],")
+    guard let data = try? Data(contentsOf: templateFileURL) else {
+            print("Failed to load template file: \(templateFileURL.absoluteString)")
+            return nil
+        }
+    guard let template = String(data: data, encoding: .utf8) else {
+            print("Failed to load string from template data")
+            return nil
+        }
 
+    return template
 }
 
-func generateDependencies(versions: VersionDeps) {
-    let dependencies = """
-    dependencies: [
-        .package(name: "AwsCrt", url: "https://github.com/awslabs/aws-crt-swift.git", from: "\(versions.awsCRTSwiftVersion)"),
-        .package(name: "ClientRuntime", url: "https://github.com/awslabs/smithy-swift.git", from: "\(versions.clientRuntimeVersion)")
-    ],
-"""
-    print(dependencies)
+func loadFilter() -> [String]? {
+    let fileManager = FileManager.default
+    let filterFileURL = URL(fileURLWithPath: #file)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("filter.json")
+
+    guard fileManager.fileExists(atPath: filterFileURL.path),
+          let data = try? Data(contentsOf: filterFileURL),
+          let filter = try? JSONDecoder().decode([String].self, from: data) else {
+              return nil
+          }
+
+    return ["AWSClientRuntime"] + filter
 }
 
-func generateTargets(_ releasedSDKs: [String]) {
-    let targetsBeginning = """
-    targets: [
-        .target(
-            name: "AWSClientRuntime",
-            dependencies: [
-                .product(name: "ClientRuntime", package: "ClientRuntime"),
-                .product(name: "AwsCommonRuntimeKit", package: "AwsCrt")
-            ],
-            path: "./AWSClientRuntime/Sources"
-        ),
-        .testTarget(
-            name: "AWSClientRuntimeTests",
-            dependencies: [
-                "AWSClientRuntime",
-                .product(name: "SmithyTestUtil", package: "ClientRuntime"),
-                .product(name: "ClientRuntime", package: "ClientRuntime")
-            ],
-            path: "./AWSClientRuntime/Tests"
-        ),
-"""
-    print(targetsBeginning)
-    for sdk in releasedSDKs {
-        print("        .target(name: \"\(sdk)\", dependencies: [.product(name: \"ClientRuntime\", package: \"ClientRuntime\"), \"AWSClientRuntime\"], path: \"./release/\(sdk)\"),")
+func loadReleasedSDKs() throws -> [String] {
+    let sdks = try FileManager.default.contentsOfDirectory(atPath: "release")
+
+    guard let filter = loadFilter() else {
+        return sdks
     }
-    print("        ]")
-    
+    let filtered = sdks.filter {
+        filter.contains($0)
+    }
+
+    return filtered
 }
 
-let sdksToIncludeInTargets = try! FileManager.default.contentsOfDirectory(atPath: "release")
-let releasedSDKs = sdksToIncludeInTargets.sorted()
+func generateProducts(_ releasedSDKs: [String]) -> String {
+    let result: [String] = releasedSDKs.reduce(into: []) {
+        $0.append("    .library(name: \"\($1)\", targets: [\"\($1)\"]),")
+    }
 
+    return result.joined(separator: "\n")
+}
+
+func generateTargets(_ releasedSDKs: [String]) -> String {
+    let result: [String] = releasedSDKs.reduce(into: []) {
+        $0.append("    .target(name: \"\($1)\", dependencies: [.product(name: \"ClientRuntime\", package: \"ClientRuntime\"), \"AWSClientRuntime\"], path: \"release/\($1)\"),")
+    }
+
+    return result.joined(separator: "\n")
+}
+
+let releasedSDKs = try loadReleasedSDKs().sorted()
 guard let versions = getVersionsOfDependencies() else {
     print("Failed to get version dependencies")
     print("  Unable to to read: '\(plistFile)'")
     exit(1)
 }
 
-generateHeader()
-generatePackageHeader()
-generateProducts(releasedSDKs)
-generateDependencies(versions: versions)
-generateTargets(releasedSDKs)
-print(")")
+if let template = try loadTemplate() {
+    let products = generateProducts(releasedSDKs)
+    let targets = generateTargets(releasedSDKs)
+    let output = template
+        .replacingOccurrences(of: "<% Products %>", with:products)
+        .replacingOccurrences(of: "<% Targets %>", with: targets)
+        .replacingOccurrences(of: "<% AwsCrtVersion %>", with: "\(versions.awsCRTSwiftVersion)")
+        .replacingOccurrences(of: "<% ClientRuntimeVersion %>", with: "\(versions.clientRuntimeVersion)")
+    print(output)
+} else {
+    print("// Failed to load template")
+}
